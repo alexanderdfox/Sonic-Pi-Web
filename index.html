@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sonic Web Pi - Live Coding Music Synth</title>
+    <style>
+        :root {
+            --bg-dark: #1e1e24;
+            --panel-dark: #121214;
+            --accent-pink: #ff2a6d;
+            --accent-cyan: #05d9e8;
+            --text-light: #e0e0e6;
+            --text-muted: #6b6b7b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--panel-dark);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--accent-pink);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: var(--text-light);
+        }
+        h1 span { color: var(--accent-pink); }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            background: transparent;
+            border: 2px solid var(--text-light);
+            color: var(--text-light);
+            padding: 8px 16px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+        }
+
+        #btn-run {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+        #btn-run:hover {
+            background: rgba(5, 217, 232, 0.1);
+        }
+
+        #btn-stop {
+            border-color: var(--accent-pink);
+            color: var(--accent-pink);
+        }
+        #btn-stop:hover {
+            background: rgba(255, 42, 109, 0.1);
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .editor-container {
+            flex: 1;
+            position: relative;
+            background-color: var(--panel-dark);
+            display: flex;
+            flex-direction: column;
+        }
+
+        textarea {
+            width: 100%;
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #a6e22e;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 16px;
+            padding: 20px;
+            resize: none;
+            outline: none;
+            line-height: 1.5;
+        }
+
+        .sidebar {
+            width: 350px;
+            background-color: var(--bg-dark);
+            border-left: 1px solid #2d2d35;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .panel-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        #visualizer {
+            width: 100%;
+            height: 120px;
+            background: var(--panel-dark);
+            border-radius: 4px;
+            border: 1px solid #2d2d35;
+        }
+
+        .console {
+            flex: 1;
+            background: var(--panel-dark);
+            border: 1px solid #2d2d35;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 13px;
+            overflow-y: auto;
+            color: var(--accent-cyan);
+        }
+
+        .error-log {
+            color: var(--accent-pink);
+        }
+
+        .cheatsheet {
+            font-size: 0.85rem;
+            background: rgba(255,255,255,0.02);
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 3px solid var(--accent-cyan);
+        }
+
+        .cheatsheet code {
+            color: var(--accent-cyan);
+            display: block;
+            margin: 4px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Sonic <span>Web</span> Pi</h1>
+        <div class="controls">
+            <button id="btn-run">▶ RUN</button>
+            <button id="btn-stop">■ STOP</button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div class="editor-container">
+            <textarea id="code-editor" spellcheck="false">// Welcome to Sonic Web Pi! 
+// Write sequential synthesis scripts below.
+
+use_synth('sawtooth');
+play(60); sleep(0.25);
+play(64); sleep(0.25);
+play(67); sleep(0.25);
+play(72); sleep(0.5);
+
+use_synth('sine');
+play(67); sleep(0.25);
+play(72); sleep(0.75);
+</textarea>
+        </div>
+
+        <div class="sidebar">
+            <div>
+                <div class="panel-title">Scope / Audio Wave</div>
+                <canvas id="visualizer"></canvas>
+            </div>
+
+            <div style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
+                <div class="panel-title">Log Console</div>
+                <div id="console" class="console">Engine ready. Press RUN to code audio.</div>
+            </div>
+
+            <div class="cheatsheet">
+                <div class="panel-title" style="margin-bottom:4px;">Quick Reference</div>
+                <code>play(midiNote); // e.g., 60 = C4</code>
+                <code>sleep(seconds); // pauses timeline</code>
+                <code>use_synth('sine' | 'sawtooth' | 'triangle' | 'square');</code>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- AUDIO ENGINE ---
+        let audioCtx = null;
+        let analyser = null;
+        let animationFrameId = null;
+        let activeSynths = [];
+        
+        // Runtime environment variables
+        let currentSynthType = 'sawtooth';
+        let playbackTimeline = 0; 
+
+        const consoleEl = document.getElementById('console');
+        const editorEl = document.getElementById('code-editor');
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 2048;
+                analyser.connect(audioCtx.destination);
+                startVisualizer();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function logToConsole(message, isError = false) {
+            const timestamp = new Date().toLocaleTimeString().split(' ')[0];
+            const logClass = isError ? 'class="error-log"' : '';
+            consoleEl.innerHTML += `<div ${logClass}>[${timestamp}] ${message}</div>`;
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        // Sonic Pi wrapper abstractions mapping Web Audio API
+        function use_synth(type) {
+            const validTypes = ['sine', 'square', 'sawtooth', 'triangle'];
+            if(validTypes.includes(type)) {
+                currentSynthType = type;
+            } else {
+                logToConsole(`Warning: Unknown synth '${type}'. Defaulting to sawtooth.`, true);
+            }
+        }
+
+        function play(midiNote, duration = 0.4) {
+            // Convert MIDI note to Frequency: f = 440 * 2^((d-69)/12)
+            const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
+            
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.type = currentSynthType;
+            osc.frequency.setValueAtTime(frequency, playbackTimeline);
+            
+            // Envelope generation (Sonic Pi ASDR simulation)
+            gainNode.gain.setValueAtTime(0, playbackTimeline);
+            gainNode.gain.linearRampToValueAtTime(0.25, playbackTimeline + 0.02); // Quick Attack
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, playbackTimeline + duration); // Smooth release
+            
+            osc.connect(gainNode);
+            gainNode.connect(analyser);
+            
+            // Execution boundaries
+            osc.start(playbackTimeline);
+            osc.stop(playbackTimeline + duration);
+            
+            activeSynths.push(osc);
+            
+            logToConsole(`↳ Play MIDI ${midiNote} (${Math.round(frequency)}Hz) at +${(playbackTimeline - audioCtx.currentTime).toFixed(2)}s`);
+        }
+
+        function sleep(seconds) {
+            playbackTimeline += seconds;
+        }
+
+        function stopAllAudio() {
+            activeSynths.forEach(osc => {
+                try { osc.stop(); } catch(e) {}
+            });
+            activeSynths = [];
+            logToConsole("Execution stopped.");
+        }
+
+        // --- CODE EVAL ENGINE ---
+        function runCode() {
+            initAudio();
+            stopAllAudio();
+            
+            // Sync engine timeline to real time
+            playbackTimeline = audioCtx.currentTime + 0.05; 
+            
+            const code = editorEl.value;
+            logToConsole("Compiling live buffer...");
+
+            try {
+                // Evaluates the user code string safely dynamically injecting wrappers
+                const wrappedCode = new Function('play', 'sleep', 'use_synth', code);
+                wrappedCode(play, sleep, use_synth);
+                logToConsole("Successfully evaluated buffer.");
+            } catch (err) {
+                logToConsole(`Syntax Error: ${err.message}`, true);
+            }
+        }
+
+        // --- VISUALIZER ---
+        function startVisualizer() {
+            const canvas = document.getElementById('visualizer');
+            const canvasCtx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                animationFrameId = requestAnimationFrame(draw);
+                analyser.getByteTimeDomainData(dataArray);
+
+                canvasCtx.fillStyle = '#121214';
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+                canvasCtx.lineWidth = 2;
+                canvasCtx.strokeStyle = '#05d9e8';
+                canvasCtx.beginPath();
+
+                const sliceWidth = canvas.width * 1.0 / bufferLength;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    const v = dataArray[i] / 128.0;
+                    const y = v * canvas.height / 2;
+
+                    if (i === 0) {
+                        canvasCtx.moveTo(x, y);
+                    } else {
+                        canvasCtx.lineTo(x, y);
+                    }
+                    x += sliceWidth;
+                }
+
+                canvasCtx.lineTo(canvas.width, canvas.height / 2);
+                canvasCtx.stroke();
+            }
+            
+            // Adjust canvas sizing for high DPI screens
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+            draw();
+        }
+
+        // --- EVENT LISTENERS ---
+        document.getElementById('btn-run').addEventListener('click', runCode);
+        document.getElementById('btn-stop').addEventListener('click', stopAllAudio);
+
+        // Standard keyboard shortcut: Ctrl+Enter or Cmd+Enter to Run Code
+        window.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                runCode();
+            }
+        });
+    </script>
+</body>
+</html>
